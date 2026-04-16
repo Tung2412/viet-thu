@@ -53,6 +53,49 @@ const parseGeminiJson = (data) => {
   };
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const OVERLOADED_MESSAGE =
+  "Hệ thống chấm điểm đang có nhiều người sử dụng. Bạn đợi 5 giây rồi bấm Nộp lại nhé!";
+
+const callGemini = async (apiKey, prompt) => {
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY = 2000;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+      },
+    );
+
+    const data = await response.json();
+
+    const errMsg = (data?.error?.message || "").toLowerCase();
+    const isOverloaded =
+      response.status === 503 ||
+      errMsg.includes("high demand") ||
+      errMsg.includes("overloaded");
+
+    if (isOverloaded && attempt < MAX_RETRIES) {
+      await sleep(RETRY_DELAY);
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(isOverloaded ? OVERLOADED_MESSAGE : data?.error?.message || "Gemini API đang báo lỗi.");
+    }
+
+    return data;
+  }
+};
+
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: corsHeaders };
@@ -77,37 +120,11 @@ export async function handler(event) {
       });
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: buildPrompt({ input, targetEn, targetVn }) }],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-
-    const data = await response.json();
-    if (!response.ok) {
-      return createResponse(response.status, {
-        error: data?.error?.message || "Gemini API đang báo lỗi.",
-      });
-    }
-
+    const data = await callGemini(apiKey, buildPrompt({ input, targetEn, targetVn }));
     return createResponse(200, parseGeminiJson(data));
   } catch (error) {
-    return createResponse(500, {
-      error: error instanceof Error ? error.message : "Lỗi hệ thống khi chấm bài.",
-    });
+    const message = error instanceof Error ? error.message : "Lỗi hệ thống khi chấm bài.";
+    const isOverloaded = message === OVERLOADED_MESSAGE;
+    return createResponse(isOverloaded ? 503 : 500, { error: message });
   }
 }

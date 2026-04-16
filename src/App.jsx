@@ -103,21 +103,44 @@ const normalizeFeedback = (result, targetSentence) => ({
   errorWords: Array.isArray(result?.errorWords) ? result.errorWords : [],
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const checkSentenceWithAI = async ({ input, targetEn, targetVn }) => {
-  const response = await fetch(AI_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ input, targetEn, targetVn }),
-  });
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY = 2000;
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error || "Không kết nối được hệ thống chấm bài.");
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(AI_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ input, targetEn, targetVn }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    const errMsg = (data?.error || "").toLowerCase();
+    const isOverloaded =
+      response.status === 503 ||
+      errMsg.includes("high demand") ||
+      errMsg.includes("overloaded");
+
+    if (isOverloaded && attempt < MAX_RETRIES) {
+      await sleep(RETRY_DELAY);
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        isOverloaded
+          ? "Hệ thống chấm điểm đang có nhiều người sử dụng. Bạn đợi 5 giây rồi bấm Nộp lại nhé!"
+          : data?.error || "Không kết nối được hệ thống chấm bài.",
+      );
+    }
+
+    return data;
   }
-
-  return data;
 };
 
 export default function App() {
