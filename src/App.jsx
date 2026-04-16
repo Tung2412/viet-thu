@@ -631,7 +631,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="flex w-full flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white/90 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-all sm:rounded-[28px]">
+          <div className="flex w-full flex-col rounded-[22px] border border-slate-200 bg-white/90 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-all sm:rounded-[28px]">
             <div className="flex items-stretch p-2">
               <div className="relative flex shrink-0 items-center border-r border-slate-200/60 pr-2 font-sans">
                 <button
@@ -744,14 +744,17 @@ export default function App() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
+        body, * {
+          font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif !important;
+        }
         .font-typewriter, textarea, input, .font-serif {
-          font-family: 'American Typewriter', 'Special Elite', 'Courier New', Courier, monospace !important;
+          font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif !important;
+          font-weight: 500;
         }
         .font-lexend-normal {
-          font-family: 'Lexend', sans-serif !important;
+          font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif !important;
           font-weight: 400;
         }
 
