@@ -39,6 +39,32 @@ const lessonData = [
 ];
 
 const AI_ENDPOINT = "/.netlify/functions/check-sentence";
+const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+const buildGeminiPrompt = ({ input, targetEn, targetVn }) =>
+  `Bạn là giáo viên chấm bài viết tiếng Anh cho học sinh Việt Nam.
+
+Nhiệm vụ:
+- Đánh giá câu học sinh có diễn đạt đúng ý tiếng Việt hay không.
+- Không bắt buộc học sinh phải viết y hệt câu mẫu.
+- Chấp nhận các cách diễn đạt khác nếu đúng nghĩa, tự nhiên và ngữ pháp đủ tốt để giao tiếp/học tập.
+- Từ chối nếu sai ý chính, thiếu ý quan trọng, ngữ pháp quá sai làm đổi nghĩa, hoặc dùng từ sai nghiêm trọng.
+- Nếu chỉ khác cách diễn đạt nhưng vẫn đúng ý, hãy chấp nhận.
+- Nếu không chấp nhận, chỉ liệt kê những từ/cụm từ sai nổi bật vào errorWords.
+
+Đầu vào:
+- Ý tiếng Việt: "${targetVn}"
+- Câu mẫu tham khảo: "${targetEn}"
+- Câu học sinh: "${input}"
+
+Chỉ trả về JSON hợp lệ theo đúng schema này:
+{
+  "isAccepted": true,
+  "explanation": "string",
+  "suggestion": "string",
+  "errorWords": ["string"]
+}`;
 
 const cleanText = (str) =>
   str
@@ -107,39 +133,43 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const checkSentenceWithAI = async ({ input, targetEn, targetVn }) => {
   const MAX_RETRIES = 2;
-  const RETRY_DELAY = 2000;
+  const RETRY_DELAY = 3000;
+  const useDirect = import.meta.env.DEV && !!GEMINI_API_KEY;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(AI_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ input, targetEn, targetVn }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    const errMsg = (data?.error || "").toLowerCase();
-    const isOverloaded =
-      response.status === 503 ||
-      errMsg.includes("high demand") ||
-      errMsg.includes("overloaded");
-
-    if (isOverloaded && attempt < MAX_RETRIES) {
-      await sleep(RETRY_DELAY);
-      continue;
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        isOverloaded
-          ? "Hệ thống chấm điểm đang có nhiều người sử dụng. Bạn đợi 5 giây rồi bấm Nộp lại nhé!"
-          : data?.error || "Không kết nối được hệ thống chấm bài.",
+    if (useDirect) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: buildGeminiPrompt({ input, targetEn, targetVn }) }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0 },
+          }),
+        },
       );
+      const data = await response.json().catch(() => ({}));
+      const errMsg = (data?.error?.message || "").toLowerCase();
+      const isOverloaded = response.status === 503 || errMsg.includes("high demand") || errMsg.includes("overloaded");
+      if (isOverloaded && attempt < MAX_RETRIES) { await sleep(RETRY_DELAY); continue; }
+      if (!response.ok) throw new Error(isOverloaded ? "Hệ thống đang bận, thử lại sau nhé!" : "Không kết nối được hệ thống chấm bài.");
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Không nhận được kết quả chấm bài.");
+      return JSON.parse(text);
+    } else {
+      const response = await fetch(AI_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input, targetEn, targetVn }),
+      });
+      const data = await response.json().catch(() => ({}));
+      const errMsg = (data?.error || "").toLowerCase();
+      const isOverloaded = response.status === 503 || errMsg.includes("high demand") || errMsg.includes("overloaded");
+      if (isOverloaded && attempt < MAX_RETRIES) { await sleep(RETRY_DELAY); continue; }
+      if (!response.ok) throw new Error(isOverloaded ? "Hệ thống đang bận, thử lại sau nhé!" : "Không kết nối được hệ thống chấm bài.");
+      return data;
     }
-
-    return data;
   }
 };
 
@@ -429,12 +459,11 @@ export default function App() {
         setFeedbackData(normalized);
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      const isBusy = msg.includes("bận");
       setFeedbackData({
-        explanation: "Chưa kết nối được phần chấm AI.",
-        suggestion:
-          error instanceof Error
-            ? error.message
-            : `Tạm thời bạn có thể tham khảo câu mẫu: "${currentLesson.en}"`,
+        explanation: isBusy ? "Hệ thống đang có nhiều người dùng!" : "Ối, chưa kết nối được AI!",
+        suggestion: msg || `Tạm thời bạn có thể tham khảo câu mẫu: "${currentLesson.en}"`,
         errorWords: [],
       });
     } finally {

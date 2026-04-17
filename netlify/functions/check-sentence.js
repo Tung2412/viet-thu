@@ -1,4 +1,4 @@
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-2.0-flash";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,7 +70,7 @@ const callGemini = async (apiKey, prompt) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" },
+          generationConfig: { responseMimeType: "application/json", temperature: 0 },
         }),
       },
     );
@@ -89,7 +89,7 @@ const callGemini = async (apiKey, prompt) => {
     }
 
     if (!response.ok) {
-      throw new Error(isOverloaded ? OVERLOADED_MESSAGE : data?.error?.message || "Gemini API đang báo lỗi.");
+      throw new Error(isOverloaded ? OVERLOADED_MESSAGE : "Hệ thống chấm bài tạm thời gián đoạn, thử lại nhé!");
     }
 
     return data;
